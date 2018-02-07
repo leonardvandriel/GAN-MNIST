@@ -2,29 +2,35 @@ import os
 import numpy as np
 from model import *
 from util import *
-from load import mnist_with_valid_set
+from load import call_labels, call_set
 
-n_epochs = 100
+labels = call_labels()
+iters = 100000
 learning_rate = 0.0002
 batch_size = 128
-image_shape = [28, 28, 1]
+image_shape = [56, 56, 3]
 dim_z = 100
+dim_y = len(labels)
 dim_W1 = 1024
-dim_W2 = 128
-dim_W3 = 64
-dim_channel = 1
+dim_W2 = 256
+dim_W3 = 128
+dim_W4 = 64
+dim_channel = image_shape[2]
 
 visualize_dim = 196
 
-trX, vaX, teX, trY, vaY, teY = mnist_with_valid_set()
+keys, images, onehots = call_set(labels, image_shape, batch_size)
 
 dcgan_model = DCGAN(
     batch_size=batch_size,
     image_shape=image_shape,
     dim_z=dim_z,
+    dim_y=dim_y,
     dim_W1=dim_W1,
     dim_W2=dim_W2,
     dim_W3=dim_W3,
+    dim_W4=dim_W4,
+    dim_channel=dim_channel,
 )
 
 Z_tf, Y_tf, image_tf, d_cost_tf, g_cost_tf, p_real, p_gen = dcgan_model.build_model(
@@ -50,25 +56,21 @@ Z_tf_sample, Y_tf_sample, image_tf_sample = dcgan_model.samples_generator(
 
 tf.global_variables_initializer().run()
 
+coord = tf.train.Coordinator()
+threads = tf.train.start_queue_runners(coord=coord)
+
 Z_np_sample = np.random.uniform(-1, 1, size=(visualize_dim, dim_z))
-Y_np_sample = OneHot(np.random.randint(10, size=[visualize_dim]))
-iterations = 0
+Y_np_sample = OneHot(np.random.randint(dim_y, size=[visualize_dim]))
 k = 2
 
 step = 200
 
-for epoch in range(n_epochs):
-    index = np.arange(len(trY))
-    np.random.shuffle(index)
-    trX = trX[index]
-    trY = trY[index]
+if True:
+    for iterations in range(iters):
 
-    for start, end in zip(
-            range(0, len(trY), batch_size),
-            range(batch_size, len(trY), batch_size)):
-
-        Xs = trX[start:end].reshape([-1, 28, 28, 1]) / 255.
-        Ys = OneHot(trY[start:end])
+        Xs = images.eval() / 255.
+        Ys = np.array(
+            [onehots[f.decode('utf-8').split('/')[2]] for f in keys.eval()])
         Zs = np.random.uniform(
             -1, 1, size=[batch_size, dim_z]).astype(np.float32)
 
@@ -125,4 +127,5 @@ for epoch in range(n_epochs):
                 generated_samples, (14, 14),
                 save_path='./vis/sample_%04d.jpg' % int(iterations / step))
 
-        iterations += 1
+coord.request_stop()
+coord.join(threads)

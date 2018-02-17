@@ -47,8 +47,7 @@ def mnist_with_valid_set():
     return trX, vaX, teX, trY, vaY, teY
 
 
-call_path = os.path.join('data', 'na12878')
-
+call_path = os.path.join('data', 'mnist')
 
 def call_labels():
     print('searching %s for labels' % call_path)
@@ -73,14 +72,23 @@ def call_set(labels, image_shape, batch_size):
     np.random.shuffle(files)
     queue = tf.train.string_input_producer(files)
     reader = tf.WholeFileReader()
-    key, value = reader.read(queue)
+    label, value = reader.read(queue)
     image = tf.image.decode_png(value)
     image = tf.image.resize_images(image, image_shape[:2])
-    image.set_shape(image_shape)
-    keys, images = tf.train.shuffle_batch(
-        [key, image],
-        batch_size=batch_size,
-        num_threads=1,
-        capacity=256 + 3 * batch_size,
-        min_after_dequeue=256)
-    return keys, images, onehots
+    image = tf.image.grayscale_to_rgb(image)
+    # image = tf.image.resize_image_with_crop_or_pad(image, 28, 28)
+    # image = tf.image.rgb_to_grayscale(image)
+    # image.set_shape(image_shape)
+    # image = tf.clip_by_value(image * 5, 0, 255)
+    # image.set_shape(image_shape)
+    # image = tf.transpose(image, [2, 0, 1])
+    images, labels = tf.train.batch(
+        [image, label],
+        batch_size=batch_size)
+    # images, labels = tf.train.shuffle_batch(
+    #     [image, label],
+    #     batch_size=batch_size,
+    #     num_threads=1,
+    #     capacity=256 + 3 * batch_size,
+    #     min_after_dequeue=256)
+    return labels, images, onehots

@@ -3,12 +3,13 @@ import numpy as np
 from model import *
 from util import *
 from load import call_labels, call_set
+import random
 
 labels = call_labels()
-iters = 100000
+iters = 4000
 learning_rate = 0.0002
 batch_size = 128
-image_shape = [56, 56, 3]
+image_shape = [112, 112, 3]
 dim_z = 100
 dim_y = len(labels)
 dim_W1 = 1024
@@ -19,7 +20,7 @@ dim_channel = image_shape[2]
 
 visualize_dim = 196
 
-keys, images, onehots = call_set(labels, image_shape, batch_size)
+label_t, image_t, onehots = call_set(labels, image_shape, batch_size)
 
 dcgan_model = DCGAN(
     batch_size=batch_size,
@@ -61,20 +62,32 @@ threads = tf.train.start_queue_runners(coord=coord)
 
 Z_np_sample = np.random.uniform(-1, 1, size=(visualize_dim, dim_z))
 Y_np_sample = OneHot(np.random.randint(dim_y, size=[visualize_dim]))
-k = 2
 
-step = 200
+step = 20
+d_loss_max = 1.3
+p_real_min = 0.5
+randomness = 0.1
+
+p_real_last, p_gen_last, g_loss_last, d_loss_last = 0.5, 0.5, 1, 1
+g_updates = 0
+
+print('d_loss_max', d_loss_max)
+print('p_real_min', p_real_min)
+print('randomness', randomness)
 
 if True:
-    for iterations in range(iters):
+    for iterations in range(iters + 1):
 
-        Xs = images.eval() / 255.
+        images, labels = sess.run([image_t, label_t])
+        Xs = images / 255.
         Ys = np.array(
-            [onehots[f.decode('utf-8').split('/')[2]] for f in keys.eval()])
+            [onehots[f.decode('utf-8').split('/')[2]] for f in labels])
         Zs = np.random.uniform(
             -1, 1, size=[batch_size, dim_z]).astype(np.float32)
 
-        if np.mod(iterations, k) != 0:
+        update_g = (random.random() > randomness) == (d_loss_last < d_loss_max and p_real_last > p_real_min)
+        if update_g:
+            g_updates += 1
             _, gen_loss_val = sess.run(
                 [train_op_gen, g_cost_tf], feed_dict={
                     Z_tf: Zs,
@@ -87,10 +100,6 @@ if True:
                     image_tf: Xs,
                     Y_tf: Ys
                 })
-            print("=========== updating G ==========")
-            print("iteration:", iterations)
-            print("gen loss:", gen_loss_val)
-            print("discrim loss:", discrim_loss_val)
 
         else:
             _, discrim_loss_val = sess.run(
@@ -107,13 +116,12 @@ if True:
                     image_tf: Xs,
                     Y_tf: Ys
                 })
-            print("=========== updating D ==========")
-            print("iteration:", iterations)
-            print("gen loss:", gen_loss_val)
-            print("discrim loss:", discrim_loss_val)
 
-        print("Average P(real)=", p_real_val.mean())
-        print("Average P(gen)=", p_gen_val.mean())
+        g_loss_last = gen_loss_val
+        d_loss_last = discrim_loss_val
+        p_real_last = p_real_val.mean()
+        p_gen_last = p_gen_val.mean()
+        print("u:%s i:%04d G/D:%.3f Lg:%.4f Ld:%.4f Pr:%.4f Pg:%.4f" % (("G" if update_g else "D"), iterations, 1.0 * g_updates / (iterations + 1), gen_loss_val, discrim_loss_val, p_real_last, p_gen_last))
 
         if np.mod(iterations, step) == 0:
             generated_samples = sess.run(
@@ -123,6 +131,8 @@ if True:
                     Y_tf_sample: Y_np_sample
                 })
             generated_samples = (generated_samples + 1.) / 2.
+            if iterations == 0:
+                save_visualization(images, (14,14), save_path='./vis/input_%04d.jpg' % int(iterations/step))
             save_visualization(
                 generated_samples, (14, 14),
                 save_path='./vis/sample_%04d.jpg' % int(iterations / step))

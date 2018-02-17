@@ -3,6 +3,7 @@ sys.path.append('..')
 
 import numpy as np
 import os
+import tensorflow as tf
 
 data_dir = 'data/'
 def mnist():
@@ -41,3 +42,48 @@ def mnist_with_valid_set():
     trY = trY[:50000]
 
     return trX, vaX, teX, trY, vaY, teY
+
+call_path = os.path.join('data', 'na12878')
+
+def call_labels():
+    print('searching %s for labels' % call_path)
+    labels = [
+        label for label in os.listdir(call_path)
+        if os.path.isdir(os.path.join(call_path, label))
+    ]
+    return labels
+
+
+def call_set(labels, image_shape, batch_size):
+    files = []
+    onehots = {}
+    for index, label in enumerate(labels):
+        p = os.path.join(call_path, label)
+        f = [os.path.join(p, f) for f in os.listdir(p)]
+        h = [0.] * 1
+        h[index] = 1.
+        onehots[label] = h
+        files += f
+        print('found %d files for label %s' % (len(f), label))
+    np.random.shuffle(files)
+    queue = tf.train.string_input_producer(files)
+    reader = tf.WholeFileReader()
+    label, value = reader.read(queue)
+    image = tf.image.decode_png(value)
+    # image = tf.image.convert_image_dtype(image, dtype=tf.float32)
+    image = tf.image.resize_images(image, image_shape[:2])
+    # image = tf.image.resize_image_with_crop_or_pad(image, 28, 28)
+    # image = tf.image.rgb_to_grayscale(image)
+    image = tf.image.grayscale_to_rgb(image)
+    # image.set_shape(image_shape)
+    image = tf.clip_by_value(image * 5, 0, 255)
+    # images, labels = tf.train.batch(
+    #     [image, label],
+    #     batch_size=batch_size)
+    images, labels = tf.train.shuffle_batch(
+        [image, label],
+        batch_size=batch_size,
+        capacity=256 + 3 * batch_size,
+        min_after_dequeue=256)
+        # shapes=[image_shape, []])
+    return labels, images, onehots
